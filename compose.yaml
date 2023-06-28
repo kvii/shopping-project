@@ -1,0 +1,103 @@
+version: "3.8"
+services:
+  # 缓存
+  redis:
+    image: redis
+    networks:
+      - cache
+
+  # 数据库
+  mysql:
+    image: mysql
+    environment:
+      - MYSQL_ROOT_PASSWORD=root
+      - MYSQL_DATABASE=app
+      - MYSQL_USER=app
+      - MYSQL_PASSWORD=app
+    ports:
+      - 3306:3306 # 调试用
+    volumes:
+      - type: volume
+        source: mysql_data
+        target: /var/lib/mysql
+        consistency: 100Gi
+      - type: bind
+        source: ./table/
+        target: /docker-entrypoint-initdb.d/
+    networks:
+      - database
+
+  # 服务发现
+  etcd:
+    hostname: etcd
+    image: bitnami/etcd:latest
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+    privileged: true
+    volumes:
+      - type: volume
+        source: etcd_data
+        target: /bitnami/etcd
+    environment:
+      - "ETCD_ADVERTISE_CLIENT_URLS=http://0.0.0.0:2379"
+      - "ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379"
+      - "ETCD_LISTEN_PEER_URLS=http://0.0.0.0:2380"
+      - "ETCD_INITIAL_ADVERTISE_PEER_URLS=http://0.0.0.0:2380"
+      - "ALLOW_NONE_AUTHENTICATION=yes"
+      - "ETCD_INITIAL_CLUSTER=node1=http://0.0.0.0:2380"
+      - "ETCD_NAME=node1"
+      - "ETCD_DATA_DIR=/opt/bitnami/etcd/data"
+    networks:
+      - register
+
+  # 用户服务
+  user:
+    image: kvii2202/shopping-user:v0.0.1-1-g49e2c39
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+    expose:
+      - 9000
+    ports:
+      - 8000:8000
+    volumes:
+      - type: bind
+        source: ./conf/user/config.yaml
+        target: /data/conf/config.yaml
+    networks:
+      - register
+      - cache
+      - database
+
+  # 订单服务
+  order:
+    image: kvii2202/shopping-order:v0.0.1-1-g49e2c39
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+    expose:
+      - 9000
+    ports:
+      - 8001:8000
+    volumes:
+      - type: bind
+        source: ./conf/order/config.yaml
+        target: /data/conf/config.yaml
+    networks:
+      - register
+      - cache
+      - database
+
+volumes:
+  mysql_data:
+  etcd_data:
+
+
+networks:
+  register:
+  cache:
+  database:
